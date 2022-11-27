@@ -1,0 +1,20 @@
+---
+title: "fMRI_Analysis"
+output: pdf_document
+date: "2022-11-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Try data
+```{r}
+# data import
+
+```
+
+
+
+
