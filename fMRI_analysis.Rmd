@@ -5,6 +5,9 @@ date: "2022-11-27"
 ---
 
 ```{r setup, include=FALSE}
+library(tidyverse)
+library(data.table)
+
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -18,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # file.rename(paste0(path, file_names), paste0(path, new_names))
 
 # Import data
-
+dat1 <- fread("./data/data/CMU_a_0050642_rois_dosenbach160.csv", select = c(1:160))
 ```
 
 
