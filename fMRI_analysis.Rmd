@@ -22,6 +22,20 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Import data
 dat1 <- fread("./data/data/CMU_a_0050642_rois_dosenbach160.csv", select = c(1:160))
+
+library(pcalg)
+library(corrplot)
+set.seed(2022)
+
+indepTest <- gaussCItest
+suffStat <- list(C = cor(dat1[,1:40]), n = nrow(dat1[,1:40]))
+pc.est <- pc(suffStat, indepTest, alpha = 0.5, p = 40, 
+             m.max = 1, verbose = FALSE)
+corrplot(pc.est@pMax)
+
+pc.est_2 <- pc(suffStat, indepTest, alpha = 0.05, p = 40,
+               m.max = 1, verbose = FALSE)
+corrplot(pc.est_2@pMax)
 ```
 
 
