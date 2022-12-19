@@ -7,8 +7,12 @@ date: "2022-11-27"
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(data.table)
+library(pcalg)
 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE)
 ```
 
 
@@ -21,35 +25,95 @@ knitr::opts_chunk$set(echo = TRUE)
 # file.rename(paste0(path, file_names), paste0(path, new_names))
 
 # Import data
-dat1 <- fread("./data/data/CMU_a_0050642_rois_dosenbach160.csv", select = c(1:160))
-dat2 <- fread("./data/data/CMU_b_0050643_rois_dosenbach160.csv", select = c(1:160))
+diag <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
+```
 
-library(pcalg)
-set.seed(2022)
 
+## Single-subject analysis
+```{r}
+path <- "./data/data/"
 indepTest <- gaussCItest
+  
+# Find asd vs. control
+df_file_names <- inner_join(data.frame(name = list.files("./data/data/"),
+                                       sub_id = as.numeric(substring(list.files("./data/data/"), 7, 13))),
+                            diag, by = "sub_id")
+asd_files <- df_file_names %>% filter(dx_group == 1) %>% 
+  select(1) %>% mutate(name = paste(path, name, sep = ""))
+tc_files <- df_file_names %>% filter(dx_group == 2) %>% 
+  select(1) %>% mutate(name = paste(path, name, sep = ""))
 
-# data 1
-suffStat_1 <- list(C = cor(dat1), n = nrow(dat1))
-pc_est_11 <- pc(suffStat_1, indepTest, alpha = 0.5, p = 160, 
-             m.max = 1, verbose = FALSE)
-a <- pc_est_11@pMax
-b <- 1 - (a - min(a))/(max(a) - min(a))
-heatmap(b)
+par = c(mfrow = c(3, 2))
+# --- ASD ---
+asd_dat <- fread(sample(as.matrix(asd_files), 1), select = c(1:160))
+suffStat_asd <- list(C = cor(asd_dat), n = nrow(asd_dat))
 
-pc_est_12 <- pc(suffStat_1, indepTest, alpha = 0.05, p = 160,
-              m.max = 1, verbose = FALSE)
-a <- pc_est_12@pMax
-b <- 1 - (a - min(a))/(max(a) - min(a))
-heatmap(b)
+# corr
+asd_corr <- cor(asd_dat)
+t_asd_corr <- (asd_corr - min(asd_corr))/(max(asd_corr) - min(asd_corr))
+colnames(t_asd_corr) <- seq(160)
+rownames(t_asd_corr) <- seq(160)
+heatmap(t_asd_corr, main = "Pearson Correlation for ASD")
 
-## data 2
-suffStat_2 <- list(C = cor(dat2), n = nrow(dat2))
-pc_est_21 <- pc(suffStat_2, indepTest, alpha = 0.5, p = 160,
-                m.max = 1, verbose = FALSE)
-a <- pc_est_21@pMax
-b <- 1 - (a - min(a))/(max(a) - min(a))
-heatmap(b)
+# pc
+asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
+             p = ncol(asd_dat), verbose = FALSE, numCores = 8)
+t_asd_pc <- (asd_pc@pMax - min(asd_pc@pMax))/(max(asd_pc@pMax) - min(asd_pc@pMax))
+heatmap(1 - t_asd_pc, main = "PC Algorithm for ASD")
+
+# fci
+asd_fci <- fci(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
+               p = ncol(asd_dat), verbose = FALSE, numCores = 8)
+t_asd_fci <- (asd_fci@pMax - min(asd_fci@pMax))/(max(asd_fci@pMax) - min(asd_fci@pMax))
+heatmap(1 - t_asd_fci, main = "FCI Algorithm for ASD")
+
+# --- TC ---
+tc_dat <- fread(sample(as.matrix(tc_files), 1), select = c(1:160))
+suffStat_tc <- list(C = cor(tc_dat), n = nrow(tc_dat))
+
+# corr
+tc_corr <- cor(tc_dat)
+t_tc_corr <- (tc_corr - min(tc_corr))/(max(tc_corr) - min(tc_corr))
+colnames(t_tc_corr) <- seq(160)
+rownames(t_tc_corr) <- seq(160)
+heatmap(t_tc_corr, main = "Pearson Correlation for Typical Control")
+
+# pc
+tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
+            p = ncol(tc_dat), verbose = FALSE, numCores = 8)
+t_tc_pc <- (tc_pc@pMax - min(tc_pc@pMax))/(max(tc_pc@pMax) - min(tc_pc@pMax))
+heatmap(1 - t_tc_pc, main = "PC Algorithm for Typical Control")
+
+# fci
+tc_fci <- fci(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
+               p = ncol(asd_dat), verbose = FALSE, numCores = 8)
+t_tc_fci <- (tc_fci@pMax - min(tc_fci@pMax))/(max(tc_fci@pMax) - min(tc_fci@pMax))
+heatmap(1 - t_tc_fci, main = "FCI Algorithm for Typical Control")
+```
+
+
+## Group analysis
+```{r, results='hide'}
+# # ASD
+# all_asd <- lapply(seq(nrow(asd_files)), function(x) {
+#   file_path <- paste(path, asd_files[x ,], sep = "")
+#   dat <- fread(file_path, select = c(1:160))
+#   
+#   cor_dat <- cor(dat, method = "pearson")
+# })
+# 
+# # average correlations
+# mean_asd <- apply(simplify2array(all_asd), 1:2, mean)
+# 
+# # PC algorithm
+# indepTest <- gaussCItest
+# 
+# suffStat_2 <- list(C = cor(dat2), n = nrow(dat2))
+# pc_est_21 <- pc(suffStat_2, indepTest, alpha = 0.5, p = 160,
+#                 m.max = 1, verbose = FALSE)
+# a <- pc_est_21@pMax
+# b <- 1 - (a - min(a))/(max(a) - min(a))
+# heatmap(b)
 ```
 
 
