@@ -8,6 +8,8 @@ date: "2022-11-27"
 library(tidyverse)
 library(data.table)
 library(pcalg)
+library(pchc)
+library(ggpubr)
 
 knitr::opts_chunk$set(
   echo = TRUE,
@@ -34,7 +36,7 @@ diag <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
 path <- "./data/data/"
 indepTest <- gaussCItest
   
-# Find asd vs. control
+# Set asd vs. control
 df_file_names <- inner_join(data.frame(name = list.files("./data/data/"),
                                        sub_id = as.numeric(substring(list.files("./data/data/"), 7, 13))),
                             diag, by = "sub_id")
@@ -43,52 +45,123 @@ asd_files <- df_file_names %>% filter(dx_group == 1) %>%
 tc_files <- df_file_names %>% filter(dx_group == 2) %>% 
   select(1) %>% mutate(name = paste(path, name, sep = ""))
 
-par = c(mfrow = c(3, 2))
+normalize_val <- function(x){
+  t_x <- (x - min(x))/(max(x) - min(x))
+  return(t_x)
+}
+
 # --- ASD ---
-asd_dat <- fread(sample(as.matrix(asd_files), 1), select = c(1:160))
+# Randomly select one asd sample
+set.seed(202212)
+asd_sel <- sample(as.matrix(asd_files), 1)
+asd_dat <- fread(asd_sel, select = c(1:160))
 suffStat_asd <- list(C = cor(asd_dat), n = nrow(asd_dat))
 
-# corr
+# Corr
 asd_corr <- cor(asd_dat)
-t_asd_corr <- (asd_corr - min(asd_corr))/(max(asd_corr) - min(asd_corr))
+t_asd_corr <- normalize_val(asd_corr)
+diag(t_asd_corr) <- 0
 colnames(t_asd_corr) <- seq(160)
 rownames(t_asd_corr) <- seq(160)
-heatmap(t_asd_corr, main = "Pearson Correlation for ASD")
 
-# pc
+heatmap(t_asd_corr, Rowv = NA, Colv = NA)
+# fig_asd_1 <- melt(t_asd_corr) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") + 
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "Pearson Correlation")
+
+# PC
 asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
-             p = ncol(asd_dat), verbose = FALSE, numCores = 8)
-t_asd_pc <- (asd_pc@pMax - min(asd_pc@pMax))/(max(asd_pc@pMax) - min(asd_pc@pMax))
-heatmap(1 - t_asd_pc, main = "PC Algorithm for ASD")
+             p = ncol(asd_dat), verbose = FALSE)
 
-# fci
+heatmap(1 - asd_pc@pMax, Rowv = NA, Colv = NA)
+# fig_asd_2 <- melt(1 - asd_pc@pMax) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "PC Algorithm")
+
+# FCI
 asd_fci <- fci(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
-               p = ncol(asd_dat), verbose = FALSE, numCores = 8)
-t_asd_fci <- (asd_fci@pMax - min(asd_fci@pMax))/(max(asd_fci@pMax) - min(asd_fci@pMax))
-heatmap(1 - t_asd_fci, main = "FCI Algorithm for ASD")
+               p = ncol(asd_dat), verbose = FALSE)
+
+heatmap(1 - asd_fci@pMax, Rowv = NA, Colv = NA)
+# fig_asd_3 <- melt(1 - asd_fci@pMax) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "FCI Algorithm")
+
+# MMHC
+asd_mmhc <- mmhc(as.matrix(asd_dat), alpha = 0.5, max_k = 1)
+
+heatmap(1 - exp(asd_mmhc$ini$pvalue), Rowv = NA, Colv = NA)
+# fig_asd_4 <- melt(1 - exp(asd_mmhc$ini$pvalue)) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "MMHC Algorithm")
 
 # --- TC ---
-tc_dat <- fread(sample(as.matrix(tc_files), 1), select = c(1:160))
+# Randomly select one tc sample
+set.seed(202212)
+tc_sel <- sample(as.matrix(tc_files), 1)
+tc_dat <- fread(tc_sel, select = c(1:160))
 suffStat_tc <- list(C = cor(tc_dat), n = nrow(tc_dat))
 
-# corr
+# Corr
 tc_corr <- cor(tc_dat)
-t_tc_corr <- (tc_corr - min(tc_corr))/(max(tc_corr) - min(tc_corr))
+t_tc_corr <- normalize_val(tc_corr)
+diag(t_tc_corr) <- 0
 colnames(t_tc_corr) <- seq(160)
 rownames(t_tc_corr) <- seq(160)
-heatmap(t_tc_corr, main = "Pearson Correlation for Typical Control")
 
-# pc
+heatmap(t_tc_corr, Rowv = NA, Colv = NA)
+# fig_tc_1 <- melt(t_tc_corr) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") + 
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "Pearson Correlation")
+
+# PC
 tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
-            p = ncol(tc_dat), verbose = FALSE, numCores = 8)
-t_tc_pc <- (tc_pc@pMax - min(tc_pc@pMax))/(max(tc_pc@pMax) - min(tc_pc@pMax))
-heatmap(1 - t_tc_pc, main = "PC Algorithm for Typical Control")
+             p = ncol(tc_dat), verbose = FALSE)
+heatmap(1 - tc_pc@pMax, Rowv = NA, Colv = NA)
 
-# fci
-tc_fci <- fci(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
-               p = ncol(asd_dat), verbose = FALSE, numCores = 8)
-t_tc_fci <- (tc_fci@pMax - min(tc_fci@pMax))/(max(tc_fci@pMax) - min(tc_fci@pMax))
-heatmap(1 - t_tc_fci, main = "FCI Algorithm for Typical Control")
+# fig_tc_2 <- melt(1 - tc_pc@pMax) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "PC Algorithm")
+
+# FCI
+tc_fci <- fci(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
+               p = ncol(tc_dat), verbose = FALSE)
+heatmap(1 - tc_fci@pMax, Rowv = NA, Colv = NA)
+
+# fig_tc_3 <- melt(1 - tc_fci@pMax) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "FCI Algorithm")
+
+# MMHC
+tc_mmhc <- mmhc(as.matrix(tc_dat), alpha = 0.5, max_k = 1)
+heatmap(1 - exp(tc_mmhc$ini$pvalue), Rowv = NA, Colv = NA)
+
+# fig_tc_4 <- melt(1 - exp(tc_mmhc$ini$pvalue)) %>% 
+#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
+#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
+#   theme(axis.title = element_blank(), axis.text = element_blank()) +
+#   labs(title = "MMHC Algorithm")
+# 
+# # Make plots
+# ggarrange(fig_asd_1, fig_asd_2, fig_asd_4, fig_tc_1, fig_tc_2, fig_tc_4, 
+#           nrow = 2, ncol = 3, common.legend = TRUE, legend = "bottom") %>% 
+#   annotate_figure(top = text_grob(paste("ASD (ID=", substring(asd_sel, 19, 25),
+#                      ") &", "(Down) Typical Control (ID=", substring(tc_sel, 19, 25),
+#                      ")", sep = "")))
 ```
 
 
