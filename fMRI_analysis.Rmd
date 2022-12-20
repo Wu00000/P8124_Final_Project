@@ -7,14 +7,22 @@ date: "2022-11-27"
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(data.table)
+library(parallel)
 library(pcalg)
 library(pchc)
 library(ggpubr)
+library(ppcor)
+library(ComplexHeatmap)
+library(circlize)
+library(igraph)
 
 knitr::opts_chunk$set(
   echo = TRUE,
   warning = FALSE,
   message = FALSE)
+
+select <- dplyr::select
+num.cores <- detectCores() - 1
 ```
 
 
@@ -27,19 +35,19 @@ knitr::opts_chunk$set(
 # file.rename(paste0(path, file_names), paste0(path, new_names))
 
 # Import data
-diag <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
+pheno <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
 ```
 
 
 ## Single-subject analysis
-```{r}
+```{r, fig.dim = c(12, 10)}
 path <- "./data/data/"
 indepTest <- gaussCItest
   
 # Set asd vs. control
-df_file_names <- inner_join(data.frame(name = list.files("./data/data/"),
+df_file_names <- inner_join(data.frame(name = list.files(path),
                                        sub_id = as.numeric(substring(list.files("./data/data/"), 7, 13))),
-                            diag, by = "sub_id")
+                            pheno, by = "sub_id")
 asd_files <- df_file_names %>% filter(dx_group == 1) %>% 
   select(1) %>% mutate(name = paste(path, name, sep = ""))
 tc_files <- df_file_names %>% filter(dx_group == 2) %>% 
@@ -52,7 +60,7 @@ normalize_val <- function(x){
 
 # --- ASD ---
 # Randomly select one asd sample
-set.seed(202212)
+set.seed(2022)
 asd_sel <- sample(as.matrix(asd_files), 1)
 asd_dat <- fread(asd_sel, select = c(1:160))
 suffStat_asd <- list(C = cor(asd_dat), n = nrow(asd_dat))
@@ -61,51 +69,27 @@ suffStat_asd <- list(C = cor(asd_dat), n = nrow(asd_dat))
 asd_corr <- cor(asd_dat)
 t_asd_corr <- normalize_val(asd_corr)
 diag(t_asd_corr) <- 0
-colnames(t_asd_corr) <- seq(160)
-rownames(t_asd_corr) <- seq(160)
+colnames(t_asd_corr) <- NULL; rownames(t_asd_corr) <- NULL
 
-heatmap(t_asd_corr, Rowv = NA, Colv = NA)
-# fig_asd_1 <- melt(t_asd_corr) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") + 
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "Pearson Correlation")
+# Partial corr
+asd_pcorr <- pcor(asd_dat)
+t_asd_pcorr <- normalize_val(asd_pcorr$estimate)
+diag(t_asd_pcorr) <- 0
+colnames(t_asd_pcorr) <- NULL; rownames(t_asd_pcorr) <- NULL
 
 # PC
-asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
+asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.1, m.max = 1,
              p = ncol(asd_dat), verbose = FALSE)
 
-heatmap(1 - asd_pc@pMax, Rowv = NA, Colv = NA)
-# fig_asd_2 <- melt(1 - asd_pc@pMax) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "PC Algorithm")
-
-# FCI
-asd_fci <- fci(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
-               p = ncol(asd_dat), verbose = FALSE)
-
-heatmap(1 - asd_fci@pMax, Rowv = NA, Colv = NA)
-# fig_asd_3 <- melt(1 - asd_fci@pMax) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "FCI Algorithm")
-
 # MMHC
-asd_mmhc <- mmhc(as.matrix(asd_dat), alpha = 0.5, max_k = 1)
+asd_mmhc <- pchc::mmhc(as.matrix(asd_dat), alpha = 0.1, max_k = 1)
+asd_mmhc_res <- 1 - exp(asd_mmhc$ini$pvalue)
+colnames(asd_mmhc_res) <- NULL; rownames(asd_mmhc_res) <- NULL
 
-heatmap(1 - exp(asd_mmhc$ini$pvalue), Rowv = NA, Colv = NA)
-# fig_asd_4 <- melt(1 - exp(asd_mmhc$ini$pvalue)) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "MMHC Algorithm")
 
 # --- TC ---
 # Randomly select one tc sample
-set.seed(202212)
+set.seed(2022)
 tc_sel <- sample(as.matrix(tc_files), 1)
 tc_dat <- fread(tc_sel, select = c(1:160))
 suffStat_tc <- list(C = cor(tc_dat), n = nrow(tc_dat))
@@ -114,59 +98,120 @@ suffStat_tc <- list(C = cor(tc_dat), n = nrow(tc_dat))
 tc_corr <- cor(tc_dat)
 t_tc_corr <- normalize_val(tc_corr)
 diag(t_tc_corr) <- 0
-colnames(t_tc_corr) <- seq(160)
-rownames(t_tc_corr) <- seq(160)
+colnames(t_tc_corr) <- NULL; rownames(t_tc_corr) <- NULL
 
-heatmap(t_tc_corr, Rowv = NA, Colv = NA)
-# fig_tc_1 <- melt(t_tc_corr) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") + 
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "Pearson Correlation")
+# Partial Corr
+tc_pcorr <- pcor(tc_dat)
+t_tc_pcorr <- normalize_val(tc_pcorr$estimate)
+diag(t_tc_pcorr) <- 0
+colnames(t_tc_pcorr) <- NULL; rownames(t_tc_pcorr) <- NULL
 
 # PC
-tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
+tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.1, m.max = 1,
              p = ncol(tc_dat), verbose = FALSE)
-heatmap(1 - tc_pc@pMax, Rowv = NA, Colv = NA)
-
-# fig_tc_2 <- melt(1 - tc_pc@pMax) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "PC Algorithm")
-
-# FCI
-tc_fci <- fci(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
-               p = ncol(tc_dat), verbose = FALSE)
-heatmap(1 - tc_fci@pMax, Rowv = NA, Colv = NA)
-
-# fig_tc_3 <- melt(1 - tc_fci@pMax) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "FCI Algorithm")
 
 # MMHC
-tc_mmhc <- mmhc(as.matrix(tc_dat), alpha = 0.5, max_k = 1)
-heatmap(1 - exp(tc_mmhc$ini$pvalue), Rowv = NA, Colv = NA)
+tc_mmhc <- pchc::mmhc(as.matrix(tc_dat), alpha = 0.1, max_k = 1)
+tc_mmhc_res <- 1 - exp(tc_mmhc$ini$pvalue)
+colnames(tc_mmhc_res) <- NULL; rownames(tc_mmhc_res) <- NULL
 
-# fig_tc_4 <- melt(1 - exp(tc_mmhc$ini$pvalue)) %>% 
-#   ggplot(aes(x = Var1, y = Var2, fill = value)) +
-#   geom_tile() + theme_bw() + scale_fill_distiller(palette = "YlGnBu") +
-#   theme(axis.title = element_blank(), axis.text = element_blank()) +
-#   labs(title = "MMHC Algorithm")
-# 
-# # Make plots
-# ggarrange(fig_asd_1, fig_asd_2, fig_asd_4, fig_tc_1, fig_tc_2, fig_tc_4, 
-#           nrow = 2, ncol = 3, common.legend = TRUE, legend = "bottom") %>% 
-#   annotate_figure(top = text_grob(paste("ASD (ID=", substring(asd_sel, 19, 25),
-#                      ") &", "(Down) Typical Control (ID=", substring(tc_sel, 19, 25),
-#                      ")", sep = "")))
+
+# Make plots
+col_fun <- colorRamp2(c(0, 0.5, 1), c("blue", "white", "red"))
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(nr = 5, nc = 2)))
+
+# asd
+pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
+draw(Heatmap(t_asd_corr, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "ASD: Full Correlation"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 2, layout.pos.col = 1))
+draw(Heatmap(t_asd_pcorr, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "ASD: Partial Correlation"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 3, layout.pos.col = 1))
+draw(Heatmap(1 - asd_pc@pMax, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "ASD: PC"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 4, layout.pos.col = 1))
+draw(Heatmap(asd_mmhc_res, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "ASD: MMHC"), newpage = F)
+upViewport()
+
+# tc
+pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 2))
+draw(Heatmap(t_tc_corr, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "TC: Full Correlation"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 2, layout.pos.col = 2))
+draw(Heatmap(t_tc_pcorr, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "TC: Partial Correlation"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 3, layout.pos.col = 2))
+draw(Heatmap(1 - tc_pc@pMax, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "TC: PC"), newpage = F)
+upViewport()
+
+pushViewport(viewport(layout.pos.row = 4, layout.pos.col = 2))
+draw(Heatmap(tc_mmhc_res, col = col_fun, cluster_rows = F, cluster_columns = F,
+             show_heatmap_legend = F, column_title = "TC: MMHC"), newpage = F)
+upViewport()
 ```
 
 
 ## Group analysis
 ```{r, results='hide'}
+# With PC
+# --- ASD ---
+asd_all_pc <- mclapply(1:nrow(asd_files), function(i) {
+  dat <- fread(asd_files[i, ], select = c(1:160))
+  suffStat <- list(C = cor(dat), n = nrow(dat))
+  
+  pc_res <- pc(suffStat, indepTest, alpha = 0.05, m.max = 1,
+               p = ncol(dat), verbose = FALSE)
+  pc_final <- ifelse(pc_res@pMax < 0.05, 1, 0)
+  adj_mat <- graph.adjacency(pc_final, mode = "max")
+  eglist <- get.edgelist(adj_mat)
+  
+}, mc.cores = num.cores)
+
+asd_all_res <- do.call(rbind, asd_all_pc) %>% 
+  as.data.frame() %>% 
+  group_by(V1, V2) %>% 
+  summarise(num = n()) %>% 
+  mutate(sel = ifelse(num > (nrow(asd_files) * 0.5), 1, 0)) %>% 
+  filter(sel == 1)
+
+# --- TC ---
+tc_all_pc <- mclapply(1:nrow(tc_files), function(i) {
+  dat <- fread(tc_files[i, ], select = c(1:160))
+  suffStat <- list(C = cor(dat), n = nrow(dat))
+  
+  pc_res <- pc(suffStat, indepTest, alpha = 0.05, m.max = 1,
+               p = ncol(dat), verbose = FALSE)
+  pc_final <- ifelse(pc_res@pMax < 0.05, 1, 0)
+  adj_mat <- graph.adjacency(pc_final, mode = "max")
+  eglist <- get.edgelist(adj_mat)
+  
+}, mc.cores = num.cores)
+
+tc_all_res <- do.call(rbind, tc_all_pc) %>% 
+  as.data.frame() %>% 
+  group_by(V1, V2) %>% 
+  summarise(num = n()) %>% 
+  mutate(sel = ifelse(num > (nrow(tc_files) * 0.5), 1, 0)) %>% 
+  filter(sel == 1)
+
+
+
+
 # # ASD
 # all_asd <- lapply(seq(nrow(asd_files)), function(x) {
 #   file_path <- paste(path, asd_files[x ,], sep = "")
