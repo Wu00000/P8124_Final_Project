@@ -23,16 +23,16 @@ knitr::opts_chunk$set(
 
 select <- dplyr::select
 num.cores <- detectCores() - 1
+path <- "./data/data/"
 ```
 
 
 ## Import data
 ```{r}
 # Change file extension
-# path <- "./data/data/"
 # old_names <- list.files(path)
-# new_names <- gsub(".1D", ".csv", old_names)
-# file.rename(paste0(path, file_names), paste0(path, new_names))
+# new_names <- gsub(".1D", "1D.csv", old_names)
+# file.rename(paste0(path, old_names), paste0(path, new_names))
 
 # Import data
 pheno <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
@@ -41,7 +41,6 @@ pheno <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
 
 ## Single-subject analysis
 ```{r, fig.dim = c(12, 14)}
-path <- "./data/data/"
 indepTest <- gaussCItest
   
 # Set asd vs. control
@@ -85,7 +84,6 @@ asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
 asd_mmhc <- pchc::mmhc(as.matrix(asd_dat), alpha = 0.5, max_k = 1)
 asd_mmhc_res <- 1 - exp(asd_mmhc$ini$pvalue)
 colnames(asd_mmhc_res) <- NULL; rownames(asd_mmhc_res) <- NULL
-
 
 # --- TC ---
 # Randomly select one tc sample
@@ -167,48 +165,63 @@ upViewport()
 
 ## Group analysis
 ```{r, results='hide'}
-# With PC
-# --- ASD ---
-asd_all_pc <- mclapply(1:nrow(asd_files), function(i) {
-  dat <- fread(asd_files[i, ], select = c(1:160))
-  suffStat <- list(C = cor(dat), n = nrow(dat))
+# === PC ===
+# Function for most common connections
+common_conn_pc <- function(dat_files = asd_files, alpha = 0.05, prct = 0.5){
   
-  pc_res <- pc(suffStat, indepTest, alpha = 0.05, m.max = 1,
-               p = ncol(dat), verbose = FALSE)
-  pc_final <- ifelse(pc_res@pMax < 0.05, 1, 0)
-  adj_mat <- graph.adjacency(pc_final, mode = "max")
-  eglist <- get.edgelist(adj_mat)
+  # pc
+  all_pc <- mclapply(1:nrow(dat_files), function(i) {
+    dat <- fread(dat_files[i, ], select = c(1:160))
+    
+    suffStat <- list(C = cor(dat), n = nrow(dat))
+    pc_res <- pc(suffStat, indepTest, alpha = alpha, m.max = 1,
+                 p = ncol(dat), verbose = FALSE)
+    pc_final <- ifelse(pc_res@pMax < alpha, 1, 0)
+    adj_mat <- graph.adjacency(pc_final, mode = "max")
+    eglist <- get.edgelist(adj_mat)
+    }, mc.cores = num.cores)
   
+  # run for all subjects
+  all_res <- do.call(rbind, all_pc) %>% 
+    as.data.frame() %>% 
+    group_by(V1, V2) %>% 
+    summarise(num = n()) %>% 
+    mutate(sel = ifelse(num > (nrow(dat_files) * prct), 1, 0)) %>% 
+    filter(sel == 1)
+  
+  return(all_res)}
+
+# --- Try alpha = 0.05 ---
+# ASD
+asd_all_res_pc <- common_conn(asd_files, alpha = 0.05, prct = 0.5)
+
+# TC
+tc_all_res_pc <- common_conn(tc_files, alpha = 0.05, prct = 0.5)
+
+# --- Different alpha ---
+# ASD
+asd_all_res_pc_alpha <- 
+  mclapply(seq(0.01, 1, by = 0.01), function(alpha){
+    
+    # find the number of connections for each alpha
+    pc_res <- common_conn_pc(dat_files = asd_files, alpha = alpha, prct = 0.5)
 }, mc.cores = num.cores)
+# saveRDS(asd_all_res_pc_alpha, "./data/asd_all_pc_alpha.RData")
 
-asd_all_res <- do.call(rbind, asd_all_pc) %>% 
-  as.data.frame() %>% 
-  group_by(V1, V2) %>% 
-  summarise(num = n()) %>% 
-  mutate(sel = ifelse(num > (nrow(asd_files) * 0.8), 1, 0)) %>% 
-  filter(sel == 1)
-
-# --- TC ---
-tc_all_pc <- mclapply(1:nrow(tc_files), function(i) {
-  dat <- fread(tc_files[i, ], select = c(1:160))
-  suffStat <- list(C = cor(dat), n = nrow(dat))
-  
-  pc_res <- pc(suffStat, indepTest, alpha = 0.05, m.max = 1,
-               p = ncol(dat), verbose = FALSE)
-  pc_final <- ifelse(pc_res@pMax < 0.05, 1, 0)
-  adj_mat <- graph.adjacency(pc_final, mode = "max")
-  eglist <- get.edgelist(adj_mat)
-  
+# TC
+tc_all_res_pc_alpha <- 
+  mclapply(seq(0.01, 1, by = 0.01), function(alpha){
+    
+    # find the number of connections for each alpha
+    pc_res <- common_conn_pc(dat_files = tc_files, alpha = alpha, prct = 0.5)
 }, mc.cores = num.cores)
+# saveRDS(tc_all_res_pc_alpha, "./data/tc_all_pc_alpha.RData")
 
-tc_all_res <- do.call(rbind, tc_all_pc) %>% 
-  as.data.frame() %>% 
-  group_by(V1, V2) %>% 
-  summarise(num = n()) %>% 
-  mutate(sel = ifelse(num > (nrow(tc_files) * 0.8), 1, 0)) %>% 
-  filter(sel == 1)
-
-
+# Comparison
+num_conn_pc <- data.frame(
+  asd = lapply(asd_all_res_pc_alpha, function(x) nrow(x)) %>% unlist(),
+  tc = lapply(tc_all_res_pc_alpha, function(x) nrow(x)) %>% unlist()
+)
 
 ```
 
