@@ -40,7 +40,7 @@ pheno <- read_csv("./data/phenotypic_CMU.csv") %>% janitor::clean_names()
 
 
 ## Single-subject analysis
-```{r, fig.dim = c(12, 10)}
+```{r, fig.dim = c(12, 14)}
 path <- "./data/data/"
 indepTest <- gaussCItest
   
@@ -60,13 +60,13 @@ normalize_val <- function(x){
 
 # --- ASD ---
 # Randomly select one asd sample
-set.seed(2022)
+set.seed(12345)
 asd_sel <- sample(as.matrix(asd_files), 1)
 asd_dat <- fread(asd_sel, select = c(1:160))
 suffStat_asd <- list(C = cor(asd_dat), n = nrow(asd_dat))
 
 # Corr
-asd_corr <- cor(asd_dat)
+asd_corr <- cor(scale(asd_dat))
 t_asd_corr <- normalize_val(asd_corr)
 diag(t_asd_corr) <- 0
 colnames(t_asd_corr) <- NULL; rownames(t_asd_corr) <- NULL
@@ -78,24 +78,24 @@ diag(t_asd_pcorr) <- 0
 colnames(t_asd_pcorr) <- NULL; rownames(t_asd_pcorr) <- NULL
 
 # PC
-asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.1, m.max = 1,
+asd_pc <- pc(suffStat_asd, indepTest, alpha = 0.5, m.max = 1,
              p = ncol(asd_dat), verbose = FALSE)
 
 # MMHC
-asd_mmhc <- pchc::mmhc(as.matrix(asd_dat), alpha = 0.1, max_k = 1)
+asd_mmhc <- pchc::mmhc(as.matrix(asd_dat), alpha = 0.5, max_k = 1)
 asd_mmhc_res <- 1 - exp(asd_mmhc$ini$pvalue)
 colnames(asd_mmhc_res) <- NULL; rownames(asd_mmhc_res) <- NULL
 
 
 # --- TC ---
 # Randomly select one tc sample
-set.seed(2022)
+set.seed(12345)
 tc_sel <- sample(as.matrix(tc_files), 1)
 tc_dat <- fread(tc_sel, select = c(1:160))
 suffStat_tc <- list(C = cor(tc_dat), n = nrow(tc_dat))
 
 # Corr
-tc_corr <- cor(tc_dat)
+tc_corr <- cor(scale(tc_dat))
 t_tc_corr <- normalize_val(tc_corr)
 diag(t_tc_corr) <- 0
 colnames(t_tc_corr) <- NULL; rownames(t_tc_corr) <- NULL
@@ -107,14 +107,13 @@ diag(t_tc_pcorr) <- 0
 colnames(t_tc_pcorr) <- NULL; rownames(t_tc_pcorr) <- NULL
 
 # PC
-tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.1, m.max = 1,
+tc_pc <- pc(suffStat_tc, indepTest, alpha = 0.5, m.max = 1,
              p = ncol(tc_dat), verbose = FALSE)
 
 # MMHC
-tc_mmhc <- pchc::mmhc(as.matrix(tc_dat), alpha = 0.1, max_k = 1)
+tc_mmhc <- pchc::mmhc(as.matrix(tc_dat), alpha = 0.5, max_k = 1)
 tc_mmhc_res <- 1 - exp(tc_mmhc$ini$pvalue)
 colnames(tc_mmhc_res) <- NULL; rownames(tc_mmhc_res) <- NULL
-
 
 # Make plots
 col_fun <- colorRamp2(c(0, 0.5, 1), c("blue", "white", "red"))
@@ -186,7 +185,7 @@ asd_all_res <- do.call(rbind, asd_all_pc) %>%
   as.data.frame() %>% 
   group_by(V1, V2) %>% 
   summarise(num = n()) %>% 
-  mutate(sel = ifelse(num > (nrow(asd_files) * 0.5), 1, 0)) %>% 
+  mutate(sel = ifelse(num > (nrow(asd_files) * 0.8), 1, 0)) %>% 
   filter(sel == 1)
 
 # --- TC ---
@@ -206,32 +205,11 @@ tc_all_res <- do.call(rbind, tc_all_pc) %>%
   as.data.frame() %>% 
   group_by(V1, V2) %>% 
   summarise(num = n()) %>% 
-  mutate(sel = ifelse(num > (nrow(tc_files) * 0.5), 1, 0)) %>% 
+  mutate(sel = ifelse(num > (nrow(tc_files) * 0.8), 1, 0)) %>% 
   filter(sel == 1)
 
 
 
-
-# # ASD
-# all_asd <- lapply(seq(nrow(asd_files)), function(x) {
-#   file_path <- paste(path, asd_files[x ,], sep = "")
-#   dat <- fread(file_path, select = c(1:160))
-#   
-#   cor_dat <- cor(dat, method = "pearson")
-# })
-# 
-# # average correlations
-# mean_asd <- apply(simplify2array(all_asd), 1:2, mean)
-# 
-# # PC algorithm
-# indepTest <- gaussCItest
-# 
-# suffStat_2 <- list(C = cor(dat2), n = nrow(dat2))
-# pc_est_21 <- pc(suffStat_2, indepTest, alpha = 0.5, p = 160,
-#                 m.max = 1, verbose = FALSE)
-# a <- pc_est_21@pMax
-# b <- 1 - (a - min(a))/(max(a) - min(a))
-# heatmap(b)
 ```
 
 
