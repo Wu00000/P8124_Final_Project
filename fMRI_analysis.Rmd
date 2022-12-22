@@ -1,7 +1,7 @@
 ---
 title: "fMRI_Analysis"
 author: "Qihang Wu"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -335,28 +335,29 @@ pc_res_all <- foreach(x = seq(nrow(df_file_names))) %do% {
   mod <- modularity(g, as.factor(df_grp$network))
   
   m_dist <- mean_distance(g, directed = FALSE) # mean distance
+  den <- edge_density(g, loops = FALSE) # density
   # assor <- assortativity_degree(g, directed = FALSE) # assortivity degree
-  # den <- edge_density(g, loops = FALSE) # density
   # dia <- diameter(g, directed = FALSE) # diameter
   
   data.frame(
     id = df_file_names$sub_id[x],
     eccentricity = ecc, assortativity = ass, 
     transitivity = tra, modularity = mod, mean_distance = m_dist,
+    density = den,
     asd = ifelse(df_file_names$dx_group[x] == 1, 1, 0))}
 
 pc_res_all_2 <- do.call(rbind, pc_res_all) %>% 
   mutate(asd = as.factor(ifelse(asd == 1, "asd", "no_asd")))
 
 # Split train vs. Test
-set.seed(1234)
-tr_id <- createDataPartition(y = pc_res_all_2$asd, p = 0.75, list = FALSE)
+set.seed(2022)
+tr_id <- createDataPartition(y = pc_res_all_2$asd, p = 0.85, list = FALSE)
 tr_dat_pc <- pc_res_all_2[tr_id, -1]
 ts_dat_pc <- pc_res_all_2[-tr_id, -1]
 
 # glm
-set.seed(1234)
-glm_fit_pc <- train(x = tr_dat_pc[, 1:5], y = tr_dat_pc$asd,
+set.seed(2022)
+glm_fit_pc <- train(x = tr_dat_pc[, 1:6], y = tr_dat_pc$asd,
                     method = "glm", metric = "ROC",
                     trControl = ctrl)
 pc_test_prob <- predict(glm_fit_pc, newdata = ts_dat_pc, type = "prob")[, 1]
@@ -389,28 +390,29 @@ mmhc_res_all <- foreach(x = seq(nrow(df_file_names))) %do% {
   mod <- modularity(g, as.factor(df_grp$network))
   
   m_dist <- mean_distance(g, directed = FALSE) # mean distance
+  den <- edge_density(g, loops = FALSE) # density
   # assor <- assortativity_degree(g, directed = FALSE) # assortivity degree
-  # den <- edge_density(g, loops = FALSE) # density
   # dia <- diameter(g, directed = FALSE) # diameter
   
   data.frame(
     id = df_file_names$sub_id[x],
-    eccentricity = ecc,
-    assortativity = ass, transitivity = tra, modularity = mod,
+    eccentricity = ecc, assortativity = ass, 
+    transitivity = tra, modularity = mod, mean_distance = m_dist,
+    density = den,
     asd = ifelse(df_file_names$dx_group[x] == 1, 1, 0))}
 
 mmhc_res_all_2 <- do.call(rbind, mmhc_res_all) %>% 
   mutate(asd = as.factor(ifelse(asd == 1, "asd", "no_asd")))
 
 # Split train vs. Test
-set.seed(1234)
-tr_id <- createDataPartition(y = mmhc_res_all_2$asd, p = 0.75, list = FALSE)
+set.seed(2022)
+tr_id <- createDataPartition(y = mmhc_res_all_2$asd, p = 0.85, list = FALSE)
 tr_dat_mmhc <- mmhc_res_all_2[tr_id, -1]
 ts_dat_mmhc <- mmhc_res_all_2[-tr_id, -1]
 
 # glm
-set.seed(1234)
-glm_fit_mmhc <- train(x = tr_dat_mmhc[, 1:5], y = tr_dat_mmhc$asd,
+set.seed(2022)
+glm_fit_mmhc <- train(x = tr_dat_mmhc[, 1:6], y = tr_dat_mmhc$asd,
                       method = "glm", metric = "ROC",
                       trControl = ctrl)
 mmhc_test_prob <- predict(glm_fit_mmhc, newdata = ts_dat_mmhc, type = "prob")[, 1]
@@ -420,109 +422,4 @@ confusionMatrix(data = as.factor(mmhc_test_pred),
                 reference = ts_dat_mmhc$asd,
                 positive = "no_asd")
 ```
-
-
-### Others
-```{r, results='hide', eval = FALSE}
-# === PC ===
-# ASD
-run <- function(dat_files = asd_files, net = "default") {
-  vars <- roi_network %>% 
-    filter(network == net) %>% pull(number)
-  len <- length(vars)
-  
-  all_pc <- mclapply(1:nrow(dat_files), function(i){
-  dat <- fread(dat_files[i, ], select = vars)
-  
-  suffStat <- list(C = cor(dat), n = nrow(dat))
-  pc_res <- pc(suffStat, indepTest, alpha = 0.05,
-               p = ncol(dat), verbose = FALSE)
-  pc_final <- ifelse(pc_res@pMax < 0.05, 1, 0)
-  adj_mat <- graph.adjacency(pc_final, mode = "max")
-  
-  # number of edges
-  num <- nrow(get.edgelist(adj_mat))/((len * (len - 1))/2)
-  }, mc.cores = num.cores)
-  
-  return(do.call(rbind, all_pc))
-}
-
-asd_default_pc <- run(asd_files, "cerebellum")
-tc_default_pc <- run(tc_files, "cerebellum")
-
-t.test(asd_default_pc, tc_default_pc)
-
-
-
-asd_all_pc <- mclapply(1:nrow(asd_files), function(i){
-  dat <- fread(asd_files[i, ], select = c(1:160))
-  
-  suffStat <- list(C = cor(dat), n = nrow(dat))
-  pc_res <- pc(suffStat, indepTest, alpha = 0.1,
-               p = ncol(dat), verbose = FALSE)
-  pc_final <- ifelse(pc_res@pMax < 0.1, 1, 0)
-  adj_mat <- graph.adjacency(pc_final, mode = "max")
-
-  # number of edges
-  num <- nrow(get.edgelist(adj_mat))
-}, mc.cores = num.cores)
-
-asd_res <- do.call(rbind, asd_all_pc)
-
-# TC
-tc_all_pc <- mclapply(1:nrow(tc_files), function(i){
-  dat <- fread(tc_files[i, ], select = c(1:160))
-  
-  suffStat <- list(C = cor(dat), n = nrow(dat))
-  pc_res <- pc(suffStat, indepTest, alpha = 0.1,
-               p = ncol(dat), verbose = FALSE)
-  pc_final <- ifelse(pc_res@pMax < 0.1, 1, 0)
-  adj_mat <- graph.adjacency(pc_final, mode = "max")
-  
-  # number of edges
-  num <- nrow(get.edgelist(adj_mat))/(160 * 159/2)
-}, mc.cores = num.cores)
-
-tc_res <- do.call(rbind, tc_all_pc)
-
-t.test(asd_res, tc_res)
-
-# --- Try alpha = 0.05 ---
-# ASD
-asd_all_res_pc <- common_conn(asd_files, alpha = 0.05, prct = 0.5)
-
-# TC
-tc_all_res_pc <- common_conn(tc_files, alpha = 0.05, prct = 0.5)
-
-# --- Different alpha ---
-alpha_ls <- seq(0.01, 0.5, length = 10)
-
-# ASD
-asd_all_res_pc_alpha <- 
-  mclapply(alpha_ls, function(alpha){
-    
-    # find the number of connections for each alpha
-    pc_res <- common_conn_pc(dat_files = asd_files, alpha = alpha, prct = 0.5)
-}, mc.cores = num.cores)
-# saveRDS(asd_all_res_pc_alpha, "./data/asd_all_pc_alpha.RData")
-
-# TC
-tc_all_res_pc_alpha <- 
-  mclapply(seq(0.01, 1, by = 0.01), function(alpha){
-    
-    # find the number of connections for each alpha
-    pc_res <- common_conn_pc(dat_files = tc_files, alpha = alpha, prct = 0.5)
-}, mc.cores = num.cores)
-# saveRDS(tc_all_res_pc_alpha, "./data/tc_all_pc_alpha.RData")
-
-# Comparison
-num_conn_pc <- data.frame(
-  asd = lapply(asd_all_res_pc_alpha, function(x) nrow(x)) %>% unlist(),
-  tc = lapply(tc_all_res_pc_alpha, function(x) nrow(x)) %>% unlist()
-)
-
-```
-
-
-
 
